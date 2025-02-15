@@ -6,6 +6,7 @@ from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
 
 disable_progress_bars()
 
+
 def _ensure_models_file():
     filepath = llm.user_dir() / "llm-mlx.json"
     if not filepath.exists():
@@ -37,11 +38,10 @@ def register_commands(cli):
         "Download and register a MLX model"
         models_file = _ensure_models_file()
         models = json.loads(models_file.read_text())
-        if model_path not in models:
-            models[model_path] = {"aliases": aliases}
-            enable_progress_bars()
-            MlxModel(model_path).prompt("hi").text()
-            disable_progress_bars()
+        models[model_path] = {"aliases": aliases}
+        enable_progress_bars()
+        MlxModel(model_path).prompt("hi").text()
+        disable_progress_bars()
         models_file.write_text(json.dumps(models, indent=2))
 
     @mlx.command()
@@ -54,8 +54,9 @@ def register_commands(cli):
 
 @llm.hookimpl
 def register_models(register):
-    for model_path in json.loads(_ensure_models_file().read_text()):
-        register(MlxModel(model_path))
+    for model_path, config in json.loads(_ensure_models_file().read_text()).items():
+        aliases = config.get("aliases", [])
+        register(MlxModel(model_path), aliases=aliases)
 
 
 class MlxModel(llm.Model):
@@ -74,7 +75,7 @@ class MlxModel(llm.Model):
 
     def execute(self, prompt, stream, response, conversation):
         model, tokenizer = self._load()
-        
+
         messages = []
         current_system = None
         if conversation is not None:
@@ -98,7 +99,7 @@ class MlxModel(llm.Model):
         chat_prompt = tokenizer.apply_chat_template(
             messages, add_generation_prompt=True
         )
-        
+
         # Always use stream_generate() because generate() in mlx_lm calls it under the hood
         for chunk in stream_generate(model, tokenizer, chat_prompt):
             yield chunk.text
@@ -109,4 +110,3 @@ class MlxModel(llm.Model):
             "peak_memory": chunk.peak_memory,
             "finish_reason": chunk.finish_reason,
         }
-
