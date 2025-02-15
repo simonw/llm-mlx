@@ -5,7 +5,7 @@ import mlx.core as mx
 from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import Optional
 
 disable_progress_bars()
@@ -14,6 +14,7 @@ DEFAULT_TEMPERATURE = 0.0
 DEFAULT_TOP_P = 1.0
 DEFAULT_MIN_P = 0.0
 DEFAULT_MIN_TOKENS_TO_KEEP = 1
+DEFAULT_MAX_TOKENS = 1024
 
 
 def _ensure_models_file():
@@ -77,6 +78,10 @@ class MlxModel(llm.Model):
             ge=0,
             default=None,
         )
+        unlimited: Optional[bool] = Field(
+            description="Unlimited output tokens",
+            default=None,
+        )
         temperature: Optional[float] = Field(
             description="Sampling temperature",
             ge=0,
@@ -100,7 +105,7 @@ class MlxModel(llm.Model):
             default=None,
         )
         seed: Optional[int] = Field(
-            description="PRNG seed",
+            description="Random number seed",
             default=None,
         )
 
@@ -158,13 +163,19 @@ class MlxModel(llm.Model):
         if prompt.options.seed:
             mx.random.seed(prompt.options.seed)
 
+        max_tokens = DEFAULT_MAX_TOKENS
+        if prompt.options.max_tokens is not None:
+            max_tokens = prompt.options.max_tokens
+        if prompt.options.unlimited:
+            max_tokens = -1
+
         # Always use stream_generate() because generate() in mlx_lm calls it under the hood
         for chunk in stream_generate(
             model,
             tokenizer,
             chat_prompt,
             sampler=sampler,
-            max_tokens=prompt.options.max_tokens or -1,
+            max_tokens=max_tokens,
         ):
             yield chunk.text
         response.set_usage(input=chunk.prompt_tokens, output=chunk.generation_tokens)
