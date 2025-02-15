@@ -10,9 +10,12 @@ from typing import Optional
 
 disable_progress_bars()
 
-DEFAULT_TEMPERATURE = 0.0
-DEFAULT_TOP_P = 1.0
-DEFAULT_MIN_P = 0.0
+# These defaults copied from llama.cpp
+# https://github.com/ggml-org/llama.cpp/blob/68ff663a04ed92044a9937bcae353e9d9733f9cd/examples/main/README.md#generation-flags
+DEFAULT_TEMPERATURE = 0.8
+DEFAULT_TOP_P = 0.9
+DEFAULT_MIN_P = 0.1
+
 DEFAULT_MIN_TOKENS_TO_KEEP = 1
 DEFAULT_MAX_TOKENS = 1024
 
