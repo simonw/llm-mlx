@@ -1,0 +1,31 @@
+[project]
+name = "llm-mlx"
+version = "0.1"
+description = "Support for MLX models in LLM"
+readme = "README.md"
+authors = [{name = "Simon Willison"}]
+license = {text = "Apache-2.0"}
+classifiers = [
+    "License :: OSI Approved :: Apache Software License"
+]
+requires-python = ">=3.9"
+dependencies = [
+    "llm",
+    "mlx-lm"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project.urls]
+Homepage = "https://github.com/simonw/llm-mlx"
+Changelog = "https://github.com/simonw/llm-mlx/releases"
+Issues = "https://github.com/simonw/llm-mlx/issues"
+CI = "https://github.com/simonw/llm-mlx/actions"
+
+[project.entry-points.llm]
+mlx = "llm_mlx"
+
+[project.optional-dependencies]
+test = ["pytest"]
