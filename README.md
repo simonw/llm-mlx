@@ -9,7 +9,7 @@ Support for MLX models in LLM
 
 ## Installation
 
-Install this plugin in the same environment as [LLM](https://llm.datasette.io/).
+Install this plugin in the same environment as [LLM](https://llm.datasette.io/). This plugin likely only works on macOS.
 ```bash
 llm install llm-mlx
 ```
