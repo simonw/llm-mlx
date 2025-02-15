@@ -30,8 +30,8 @@ The [mlx-community](https://huggingface.co/mlx-community) organization is a usef
 
 MLX models can use the following model options:
 
-- `-o max_tokens 20`: Maximum number of tokens to generate in the completion.
-- `-o unlimited 1`: Generate an unlimited number of tokens in the completion.
+- `-o max_tokens INTEGER`: Maximum number of tokens to generate in the completion (defaults to 1024)
+- `-o unlimited 1`: Generate an unlimited number of tokens in the completion
 - `-o temperature FLOAT`: Sampling temperature (defaults to 0.8)
 - `-o top_p FLOAT`: Sampling top-p (defaults to 0.9)
 - `-o min_p FLOAT`: Sampling min-p (defaults to 0.1)
