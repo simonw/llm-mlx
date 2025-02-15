@@ -5,7 +5,9 @@
 [![Tests](https://github.com/simonw/llm-mlx/actions/workflows/test.yml/badge.svg)](https://github.com/simonw/llm-mlx/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/llm-mlx/blob/main/LICENSE)
 
-Support for [MLX](https://github.com/ml-explore/mlx) models in [LLM](https://llm.datasette.io/)
+Support for [MLX](https://github.com/ml-explore/mlx) models in [LLM](https://llm.datasette.io/).
+
+Read my blog for [background on this project](https://simonwillison.net/2025/Feb/15/llm-mlx/).
 
 ## Installation
 
