@@ -5,7 +5,7 @@
 [![Tests](https://github.com/simonw/llm-mlx/actions/workflows/test.yml/badge.svg)](https://github.com/simonw/llm-mlx/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/llm-mlx/blob/main/LICENSE)
 
-Support for MLX models in LLM
+Support for [MLX](https://github.com/ml-explore/mlx) models in [LLM](https://llm.datasette.io/)
 
 ## Installation
 
@@ -24,6 +24,7 @@ Then run prompts like this:
 ```bash
 llm -m mlx-community/Llama-3.2-3B-Instruct-4bit 'Capital of France?' -s 'you are a pelican'
 ```
+The [mlx-community](https://huggingface.co/mlx-community) organization is a useful source for compatible models.
 
 ## Development
 
