@@ -26,6 +26,23 @@ llm -m mlx-community/Llama-3.2-3B-Instruct-4bit 'Capital of France?' -s 'you are
 ```
 The [mlx-community](https://huggingface.co/mlx-community) organization is a useful source for compatible models.
 
+### Model options
+
+MLX models can use the following model options:
+
+- `-o max_tokens 20`: Maximum number of tokens to generate in the completion.
+- `-o unlimited 1`: Generate an unlimited number of tokens in the completion.
+- `-o temperature FLOAT`: Sampling temperature (defaults to 0.8)
+- `-o top_p FLOAT`: Sampling top-p (defaults to 0.9)
+- `-o min_p FLOAT`: Sampling min-p (defaults to 0.1)
+- `-o min_tokens_to_keep INT`: Minimum tokens to keep for min-p sampling (defaults to 1)
+- `-o seed INT`: Random number seed to use
+
+For example:
+```bash
+llm -m mlx-community/Llama-3.2-3B-Instruct-4bit 'Joke about pelicans' -o max_tokens 60 -o temperature 1.0
+```
+
 ## Development
 
 To set up this plugin locally, first checkout the code. Then create a new virtual environment:
