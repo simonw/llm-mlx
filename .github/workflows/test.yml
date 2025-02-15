@@ -19,6 +19,11 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: pip
         cache-dependency-path: pyproject.toml
+    - name: Cache models
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/huggingface
+        key: ${{ runner.os }}-huggingface-
     - name: Install dependencies
       run: |
         pip install -e '.[test]'
