@@ -15,6 +15,13 @@ Install this plugin in the same environment as [LLM](https://llm.datasette.io/).
 ```bash
 llm install llm-mlx
 ```
+This plugin depends on [sentencepiece](https://pypi.org/project/sentencepiece/) which does not yet publish a binary wheel for Python 3.13. You will find this plugin easier to run on Python 3.12 or lower. One way to install a version of LLM that uses Python 3.12 is like this, using [uv](https://github.com/astral-sh/uv):
+
+```bash
+uv tool install llm --python 3.12
+```
+See [issue #7](https://github.com/simonw/llm-mlx/issues/7) for more on this.
+
 ## Usage
 
 To install an MLX model from Hugging Face, use the `llm mlx download-model` command. This example downloads 1.8GB of model weights from [mlx-community/Llama-3.2-3B-Instruct-4bit](https://huggingface.co/mlx-community/Llama-3.2-3B-Instruct-4bit):
