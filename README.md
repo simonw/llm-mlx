@@ -64,7 +64,7 @@ llm -m mlx-community/Llama-3.2-3B-Instruct-4bit 'Joke about pelicans' -o max_tok
 
 ## Importing existing models
 
-If you have used MLX models in the past you may already have some installed in your `~/.cache/huggingface/dub` directory.
+If you have used MLX models in the past you may already have some installed in your `~/.cache/huggingface/hub` directory.
 
 The `llm mlx import-models` command can detect these and provide you with the option to add them to the list of models registered with LLM.
 
