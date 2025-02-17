@@ -41,6 +41,7 @@ The following models all work well with this plugin:
 
 - `mlx-community/Qwen2.5-0.5B-Instruct-4bit` - [278MB](https://huggingface.co/mlx-community/Qwen2.5-0.5B-Instruct-4bit)
 - `mlx-community/Mistral-7B-Instruct-v0.3-4bit` - [4.08GB](https://huggingface.co/mlx-community/Mistral-7B-Instruct-v0.3-4bit)
+-  `mlx-community/Mistral-Small-24B-Instruct-2501-4bit` — [13.26 GB](https://huggingface.co/mlx-community/Mistral-Small-24B-Instruct-2501-4bit)
 - `mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit` - [18.5GB](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit)
 - `mlx-community/Llama-3.3-70B-Instruct-4bit` - [40GB](https://huggingface.co/mlx-community/Llama-3.3-70B-Instruct-4bit)
 
@@ -61,24 +62,42 @@ For example:
 llm -m mlx-community/Llama-3.2-3B-Instruct-4bit 'Joke about pelicans' -o max_tokens 60 -o temperature 1.0
 ```
 
+## Importing existing models
+
+If you have used MLX models in the past you may already have some installed in your `~/.cache/huggingface/hub` directory.
+
+The `llm mlx import-models` command can detect these and provide you with the option to add them to the list of models registered with LLM.
+
+```bash
+llm mlx import-models
+```
+This will open an interface like this one:
+```
+Available models (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C to quit):
+> ○ (llama) mlx-community/DeepSeek-R1-Distill-Llama-8B (already imported)
+  ○ (llama) mlx-community/Llama-3.2-3B-Instruct-4bit (already imported)
+  ○ (llama) mlx-community/Llama-3.3-70B-Instruct-4bit
+  ○ (mistral) mlx-community/Mistral-7B-Instruct-v0.3-4bit (already imported)
+  ○ (mistral) mlx-community/Mistral-Small-24B-Instruct-2501-4bit
+```
+Navigate <up> and <down>, hit `<space>` to select models to import and then hit `<enter>` to confirm.
+
 ## Using models from Python
 
-You can use this plugin in Python like this:
-
+If you have registered models with the `llm download-model` command you can use in Python like this:
+```python
+import llm
+model = llm.get_model("mlx-community/Llama-3.2-3B-Instruct-4bit")
+print(model.prompt("hi").text())
+```
+You can avoid that registration step entirely by accessing the models like this instead:
 ```python
 from llm_mlx import MlxModel
 model = MlxModel("mlx-community/Llama-3.2-3B-Instruct-4bit")
 print(model.prompt("hi").text())
 # Outputs: How can I assist you today?
 ```
-Using `MlxModel` directly in this way avoids needing to first use the `download-model` command.
 
-If you have already registered models with that command you can use them like this instead:
-```python
-import llm
-model = llm.get_model("mlx-community/Llama-3.2-3B-Instruct-4bit")
-print(model.prompt("hi").text())
-```
 The [LLM Python API documentation](https://llm.datasette.io/en/stable/python-api.html) has more details on how to use LLM models.
 
 ## Development

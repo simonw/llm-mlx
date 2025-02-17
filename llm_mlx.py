@@ -33,6 +33,130 @@ def _ensure_models_file():
         filepath.write_text("{}")
     return filepath
 
+
+@llm.hookimpl
+def register_commands(cli):
+    @cli.group()
+    def mlx():
+        "Commands for working with MLX models"
+
+    @mlx.command()
+    def models_file():
+        "Display the path to the llm-mlx.json file"
+        click.echo(_ensure_models_file())
+
+    @mlx.command()
+    @click.argument("model_path")
+    @click.option(
+        "aliases",
+        "-a",
+        "--alias",
+        multiple=True,
+        help="Alias(es) to register the model under",
+    )
+    def download_model(model_path, aliases):
+        "Download and register a MLX model"
+        models_file = _ensure_models_file()
+        models = json.loads(models_file.read_text())
+        models[model_path] = {"aliases": aliases}
+        enable_progress_bars()
+        MlxModel(model_path).prompt("hi").text()
+        disable_progress_bars()
+        models_file.write_text(json.dumps(models, indent=2))
+
+    @mlx.command()
+    def models():
+        "List registered MLX models"
+        models_file = _ensure_models_file()
+        models = json.loads(models_file.read_text())
+        click.echo(json.dumps(models, indent=2))
+
+    @mlx.command()
+    def import_models():
+        "Import existing MLX models from the Hugging Face cache"
+        cache_dir = Path(
+            os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+        )
+        found_models = set()
+        for root, dirs, _ in os.walk(cache_dir):
+            for d in dirs:
+                if "mlx-community" in d:
+                    model_dir = Path(root) / d
+                    snapshots_dir = model_dir / "snapshots"
+                    if not snapshots_dir.exists():
+                        continue
+
+                    # Search for config.json in any subfolder under snapshots
+                    config_found = False
+                    for config_root, _, config_files in os.walk(snapshots_dir):
+                        if "config.json" in config_files:
+                            config_path = Path(config_root) / "config.json"
+                            try:
+                                with open(config_path) as f:
+                                    config = json.load(f)
+                                    model_type = config.get("model_type", "").lower()
+                                    if model_type in [
+                                        "whisper",
+                                        "llava",
+                                        "paligemma",
+                                        "qwen2_vl",
+                                        "qwen2_5_vl",
+                                        "florence2",
+                                        "florence",
+                                    ]:
+                                        continue
+                                    config_found = True
+                                    break
+                            except (json.JSONDecodeError, FileNotFoundError):
+                                continue
+
+                    if not config_found:
+                        continue
+                    parts = d.split("--")
+                    model_name = "/".join(parts[1:])
+                    if model_name:
+                        # Store model_type along with model_name
+                        found_models.add((model_type, model_name))
+
+        if not found_models:
+            click.echo("No MLX models found in Hugging Face cache")
+            return
+
+        models_file = _ensure_models_file()
+        existing_models = json.loads(models_file.read_text())
+
+        # Create list of models with their current import status
+        model_choices = []
+        for model_type, model in sorted(found_models):
+            is_imported = model in existing_models
+            status = " (already imported)" if is_imported else ""
+            # Include model_type in display name
+            display_name = f"({model_type}) {model}{status}"
+            model_choices.append((display_name, model, is_imported))
+
+        # Show interactive selection menu
+        selected = select_models(model_choices)
+        print("\nImporting models...\n")
+        for display_name, model_name, is_imported in selected:
+            if is_imported:
+                # Remove model if it was already imported
+                del existing_models[model_name]
+                models_file.write_text(json.dumps(existing_models, indent=2))
+                click.echo(f"Removed {model_name}")
+            else:
+                # Import new model
+                existing_models[model_name] = {"aliases": []}
+                models_file.write_text(json.dumps(existing_models, indent=2))
+                click.echo(f"Imported {model_name}")
+
+
+@llm.hookimpl
+def register_models(register):
+    for model_path, config in json.loads(_ensure_models_file().read_text()).items():
+        aliases = config.get("aliases", [])
+        register(MlxModel(model_path), aliases=aliases)
+
+
 class MlxModel(llm.Model):
     can_stream = True
 
