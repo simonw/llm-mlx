@@ -69,7 +69,7 @@ def register_commands(cli):
 
     @mlx.command()
     def import_models():
-        "Import MLX models from the Hugging Face cache."
+        "Import existing MLX models from the Hugging Face cache"
         cache_dir = Path(
             os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
         )
