@@ -12,11 +12,11 @@ from pathlib import Path
 from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
-from typing import Union, Any, Dict, List, Optional
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from typing import AsyncGenerator, Any, Dict, Generator, List, Optional
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 disable_progress_bars()
 
@@ -159,61 +159,45 @@ def register_commands(cli):
     @click.option("--alias", help="Register the model with this alias")
     @click.option("-o", "--option", multiple=True, nargs=2, help="Set model options (can be used multiple times)")
     def serve(model_identifier, port, model, alias, option):
-        """
-        Start an OpenAI-compatible API server for the specified model
-        """
+        """Start an OpenAI-compatible API server for the specified model"""
         models_file = _ensure_models_file()
         models = json.loads(models_file.read_text())
 
-        # figure out which model path to load
-        if model:
-            # register alias if provided
-            if alias:
-                models[model] = {"aliases": [alias]}
-                models_file.write_text(json.dumps(models, indent=2))
-                click.echo(f"Registered '{model}' as alias '{alias}'")
-            model_to_load = model
-            server_model_name = alias or model_identifier
-        else:
-            model_to_load = None
-            for path, config in models.items():
-                if model_identifier in config.get("aliases", []):
-                    model_to_load = path
-                    break
+        # Determine model path
+        model_to_load = model
+        server_model_name = alias or model_identifier
+        if not model:
+            model_to_load = next(
+                (path for path, config in models.items() 
+                 if model_identifier in config.get("aliases", [])),
+                None
+            )
             if not model_to_load:
                 raise click.ClickException(f"Model '{model_identifier}' not found")
             server_model_name = model_identifier
 
-        # Convert options to a dictionary
-        options = {}
-        if option:
-            for key, value in option:
-                try:
-                    # Try to convert to appropriate type
-                    if value.lower() == "true":
-                        value = True
-                    elif value.lower() == "false":
-                        value = False
-                    elif "." in value:
-                        value = float(value)
-                    else:
-                        value = int(value)
-                except ValueError:
-                    # Keep as string if conversion fails
-                    pass
-                options[key] = value
+        # Register alias if provided
+        if model and alias:
+            models[model] = {"aliases": [alias]}
+            models_file.write_text(json.dumps(models, indent=2))
+            click.echo(f"Registered '{model}' as alias '{alias}'")
 
-        # Load the model with options
         try:
             mlx_model = MlxModel(model_to_load)
-            # Set options before loading
-            mlx_model.default_options = mlx_model.Options(**options)
-            mlx_model._load()
+            # Set options directly on default_options
+            for key, value in option:
+                if hasattr(mlx_model.default_options, key):
+                    setattr(mlx_model.default_options, key, 
+                        float(value) if '.' in value 
+                        else int(value) if value.isdigit() 
+                        else value.lower() == 'true' if value.lower() in ['true', 'false'] 
+                        else value
+                    )
+
+            click.echo(f"Starting API server for {server_model_name} on port {port}")
+            mlx_model.serve(server_model_name, port)
         except Exception as e:
             raise click.ClickException(f"Failed to load model: {str(e)}")
-
-        click.echo(f"Starting API server for {server_model_name} on port {port}")
-        mlx_model.serve(server_model_name, port)
 
 @llm.hookimpl
 def register_models(register):
@@ -266,6 +250,7 @@ class MlxModel(llm.Model):
         self.model_path = model_path
         self._model = None
         self._tokenizer = None
+        self.default_options = self.Options()
 
     def _load(self):
         if self._model is None:
@@ -332,27 +317,46 @@ class MlxModel(llm.Model):
             "finish_reason": chunk.finish_reason,
         }
 
-    def get_generation_params(self, options=None):
-        """Get generation parameters from options or defaults"""
-        opts = options or self.default_options
-        return {
-            "temperature": opts.temperature if opts.temperature is not None else DEFAULT_TEMPERATURE,
-            "top_p": opts.top_p if opts.top_p is not None else DEFAULT_TOP_P,
-            "min_p": opts.min_p if opts.min_p is not None else DEFAULT_MIN_P,
-            "min_tokens_to_keep": opts.min_tokens_to_keep if opts.min_tokens_to_keep is not None else DEFAULT_MIN_TOKENS_TO_KEEP,
-            "max_tokens": opts.max_tokens if opts.max_tokens is not None else DEFAULT_MAX_TOKENS
-        }
-
-    async def _generate_completion(self, chat_prompt, sampler, max_tokens, model_name):
-        """Helper method to generate non-streaming responses"""
-        generated_text = ""
+    def _generate_chunks(self, chat_prompt: str, sampler: Any, max_tokens: int) -> Generator[Any, None, None]:
+        """Helper method to generate response chunks"""
+        model, tokenizer = self._load()
         for chunk in stream_generate(
-            self._model,
-            self._tokenizer,
+            model,
+            tokenizer,
             chat_prompt,
             sampler=sampler,
             max_tokens=max_tokens
         ):
+            yield chunk
+            
+    def get_generation_params(self, options=None):
+        """Get generation parameters from options or defaults with proper cascading"""
+        param_mapping = {
+            "temperature": DEFAULT_TEMPERATURE,
+            "top_p": DEFAULT_TOP_P,
+            "min_p": DEFAULT_MIN_P,
+            "min_tokens_to_keep": DEFAULT_MIN_TOKENS_TO_KEEP,
+            "max_tokens": DEFAULT_MAX_TOKENS
+        }
+        
+        def get_param_value(param_name, default_value):
+            if options and getattr(options, param_name, None) is not None:
+                return getattr(options, param_name)
+            if self.default_options and getattr(self.default_options, param_name, None) is not None:
+                return getattr(self.default_options, param_name)
+            return default_value
+        
+        return {
+            param: get_param_value(param, default_value)
+            for param, default_value in param_mapping.items()
+        }
+
+
+    async def _generate_completion(self, chat_prompt: str, sampler: Any, 
+                                  max_tokens: int, model_name: str) -> Dict[str, Any]:
+        """Generate complete response by collecting all chunks"""
+        generated_text = ""
+        for chunk in self._generate_chunks(chat_prompt, sampler, max_tokens):
             generated_text += chunk.text
 
         return {
@@ -360,16 +364,11 @@ class MlxModel(llm.Model):
             "object": "chat.completion",
             "created": int(time.time()),
             "model": model_name,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": generated_text
-                    },
-                    "finish_reason": "stop"
-                }
-            ]
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": generated_text},
+                "finish_reason": "stop"
+            }]
         }
 
     def _normalize_messages(self, messages: Any) -> List[Dict[str, str]]:
@@ -388,33 +387,58 @@ class MlxModel(llm.Model):
             normalized.append({"role": m["role"], "content": content})
         return normalized
 
-    def _stream_response(self, chat_prompt, sampler, max_tokens, model_name):
-        """Helper method to generate streaming responses"""
-        for chunk in stream_generate(
-            self._model,
-            self._tokenizer,
-            chat_prompt,
-            sampler=sampler,
-            max_tokens=max_tokens
-        ):
-            data = {
+    async def _stream_response( self, chat_prompt: str, sampler,max_tokens: int, model_name: str) -> AsyncGenerator[str, None]:
+        try:
+            for chunk in stream_generate(
+                self._model,
+                self._tokenizer,
+                chat_prompt,
+                sampler=sampler,
+                max_tokens=max_tokens
+            ):
+                response_json = {
+                    "id": f"chatcmpl-{uuid.uuid4()}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": model_name,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "content": chunk.text
+                        },
+                        "finish_reason": None
+                    }]
+                }
+                yield f"data: {json.dumps(response_json)}\n\n"
+
+            # Send final completion message
+            final_json = {
                 "id": f"chatcmpl-{uuid.uuid4()}",
                 "object": "chat.completion.chunk",
                 "created": int(time.time()),
                 "model": model_name,
-                "choices": [
-                    {
-                        "delta": {"content": chunk.text},
-                        "index": 0,
-                        "finish_reason": None
-                    }
-                ]
+                "choices": [{
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop"
+                }]
             }
-            yield f"data: {json.dumps(data)}\n\n"
-        yield "data: [DONE]\n\n"
+            yield f"data: {json.dumps(final_json)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            error_json = {
+                "error": {
+                    "message": str(e),
+                    "type": "server_error",
+                    "code": 500
+                }
+            }
+            yield f"data: {json.dumps(error_json)}\n\n"
+            yield "data: [DONE]\n\n"
 
     def create_api_app(self, server_model_name):
         """Create FastAPI app with model settings"""
+        self._load()
         app = FastAPI(title="MLX OpenAI-Compatible API")
         
         app.add_middleware(
@@ -424,19 +448,17 @@ class MlxModel(llm.Model):
             allow_methods=["*"],
             allow_headers=["*"],
         )
-
+        
         class ChatCompletionRequest(BaseModel):
             model: Optional[str] = None
             messages: Optional[List[Dict[str, Any]]] = None
-            temperature: Optional[float] = Field(default=self.default_options.temperature or DEFAULT_TEMPERATURE, ge=0, le=2)
-            max_tokens: Optional[int] = Field(default=self.default_options.max_tokens or DEFAULT_MAX_TOKENS, ge=-1)
-            top_p: Optional[float] = Field(default=self.default_options.top_p or DEFAULT_TOP_P, ge=0, le=1)
+            temperature: Optional[float] = Field(None, ge=0, le=2)
+            max_tokens: Optional[int] = Field(None, ge=-1)
+            top_p: Optional[float] = Field(None, ge=0, le=1)
             stream: Optional[bool] = False
+            model_config = ConfigDict(extra="allow")
 
-            class Config:
-                extra = "allow"
-
-            @root_validator(pre=True)
+            @model_validator(mode='before')
             def fill_defaults(cls, values):
                 if not values.get("model"):
                     values["model"] = server_model_name
@@ -448,38 +470,30 @@ class MlxModel(llm.Model):
         async def chat_completions(request: ChatCompletionRequest):
             try:
                 messages = self._normalize_messages(request.messages)
-                chat_prompt = self._tokenizer.apply_chat_template(
-                    messages,
-                    add_generation_prompt=True
-                )
-
-                # Use model's generation parameters
-                gen_params = self.get_generation_params()
-                gen_params.update({
-                    "temperature": request.temperature,
-                    "top_p": request.top_p,
-                    "max_tokens": request.max_tokens
-                })
-
+                chat_prompt = self._tokenizer.apply_chat_template(messages, add_generation_prompt=True)
+                
                 sampler = make_sampler(
-                    gen_params["temperature"],
-                    gen_params["top_p"],
-                    gen_params["min_p"],
-                    gen_params["min_tokens_to_keep"]
+                    request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE,
+                    request.top_p if request.top_p is not None else DEFAULT_TOP_P,
+                    DEFAULT_MIN_P,
+                    DEFAULT_MIN_TOKENS_TO_KEEP
                 )
+
+                max_tokens = request.max_tokens if request.max_tokens is not None else DEFAULT_MAX_TOKENS
 
                 if request.stream:
                     return StreamingResponse(
-                        self._stream_response(chat_prompt, sampler, gen_params["max_tokens"], request.model),
+                        self._stream_response(chat_prompt, sampler, max_tokens, request.model),
                         media_type="text/event-stream"
                     )
                 else:
-                    return await self._generate_completion(chat_prompt, sampler, gen_params["max_tokens"], request.model)
+                    return await self._generate_completion(
+                        chat_prompt, sampler, max_tokens, request.model
+                    )
 
             except Exception as e:
-                logger.error(f"Error in chat completion: {str(e)}")
-                logger.exception("Full traceback:")
-                raise HTTPException(400, detail=str(e))
+                logger.error(f"Error: {str(e)}")
+                raise HTTPException(500, detail=str(e))
 
         @app.get("/v1/models")
         async def list_models():

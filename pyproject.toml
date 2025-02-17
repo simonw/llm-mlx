@@ -16,7 +16,9 @@ dependencies = [
     "uvicorn (>=0.34.0,<0.35.0)",
     "pydantic (>=2.10.6,<3.0.0)",
     "click (>=8.1.8,<9.0.0)",
-    "python-multipart (>=0.0.20,<0.0.21)"
+    "python-multipart (>=0.0.20,<0.0.21)",
+    "pytest (>=8.3.4,<9.0.0)",
+    "pytest-asyncio (>=0.25.3,<0.26.0)"
 ]
 
 [build-system]
@@ -34,3 +36,7 @@ mlx = "llm_mlx"
 
 [project.optional-dependencies]
 test = ["pytest"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
