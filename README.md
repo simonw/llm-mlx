@@ -41,6 +41,7 @@ The following models all work well with this plugin:
 
 - `mlx-community/Qwen2.5-0.5B-Instruct-4bit` - [278MB](https://huggingface.co/mlx-community/Qwen2.5-0.5B-Instruct-4bit)
 - `mlx-community/Mistral-7B-Instruct-v0.3-4bit` - [4.08GB](https://huggingface.co/mlx-community/Mistral-7B-Instruct-v0.3-4bit)
+-  `mlx-community/Mistral-Small-24B-Instruct-2501-4bit` — [13.26 GB](https://huggingface.co/mlx-community/Mistral-Small-24B-Instruct-2501-4bit)
 - `mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit` - [18.5GB](https://huggingface.co/mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit)
 - `mlx-community/Llama-3.3-70B-Instruct-4bit` - [40GB](https://huggingface.co/mlx-community/Llama-3.3-70B-Instruct-4bit)
 
