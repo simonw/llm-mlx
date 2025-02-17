@@ -64,22 +64,20 @@ llm -m mlx-community/Llama-3.2-3B-Instruct-4bit 'Joke about pelicans' -o max_tok
 
 ## Using models from Python
 
-You can use this plugin in Python like this:
-
+If you have registered models with the `llm download-model` command you can use in Python like this:
+```python
+import llm
+model = llm.get_model("mlx-community/Llama-3.2-3B-Instruct-4bit")
+print(model.prompt("hi").text())
+```
+You can avoid that registration step entirely by accessing the models like this instead:
 ```python
 from llm_mlx import MlxModel
 model = MlxModel("mlx-community/Llama-3.2-3B-Instruct-4bit")
 print(model.prompt("hi").text())
 # Outputs: How can I assist you today?
 ```
-Using `MlxModel` directly in this way avoids needing to first use the `download-model` command.
 
-If you have already registered models with that command you can use them like this instead:
-```python
-import llm
-model = llm.get_model("mlx-community/Llama-3.2-3B-Instruct-4bit")
-print(model.prompt("hi").text())
-```
 The [LLM Python API documentation](https://llm.datasette.io/en/stable/python-api.html) has more details on how to use LLM models.
 
 ## Development
