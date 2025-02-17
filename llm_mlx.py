@@ -7,6 +7,9 @@ from mlx_lm.sample_utils import make_sampler
 from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
 from pydantic import Field, field_validator
 from typing import Optional
+import os
+from pathlib import Path  # local import to avoid adding to global namespace
+import sys
 
 disable_progress_bars()
 
@@ -63,6 +66,84 @@ def register_commands(cli):
         models_file = _ensure_models_file()
         models = json.loads(models_file.read_text())
         click.echo(json.dumps(models, indent=2))
+
+    @mlx.command()
+    def import_models():
+        "Import existing MLX models from the Hugging Face cache"
+        cache_dir = Path(
+            os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+        )
+        found_models = set()
+        for root, dirs, _ in os.walk(cache_dir):
+            for d in dirs:
+                if "mlx-community" in d:
+                    model_dir = Path(root) / d
+                    snapshots_dir = model_dir / "snapshots"
+                    if not snapshots_dir.exists():
+                        continue
+
+                    # Search for config.json in any subfolder under snapshots
+                    config_found = False
+                    for config_root, _, config_files in os.walk(snapshots_dir):
+                        if "config.json" in config_files:
+                            config_path = Path(config_root) / "config.json"
+                            try:
+                                with open(config_path) as f:
+                                    config = json.load(f)
+                                    model_type = config.get("model_type", "").lower()
+                                    if model_type in [
+                                        "whisper",
+                                        "llava",
+                                        "paligemma",
+                                        "qwen2_vl",
+                                        "qwen2_5_vl",
+                                        "florence2",
+                                        "florence",
+                                    ]:
+                                        continue
+                                    config_found = True
+                                    break
+                            except (json.JSONDecodeError, FileNotFoundError):
+                                continue
+
+                    if not config_found:
+                        continue
+                    parts = d.split("--")
+                    model_name = "/".join(parts[1:])
+                    if model_name:
+                        # Store model_type along with model_name
+                        found_models.add((model_type, model_name))
+
+        if not found_models:
+            click.echo("No MLX models found in Hugging Face cache")
+            return
+
+        models_file = _ensure_models_file()
+        existing_models = json.loads(models_file.read_text())
+
+        # Create list of models with their current import status
+        model_choices = []
+        for model_type, model in sorted(found_models):
+            is_imported = model in existing_models
+            status = " (already imported)" if is_imported else ""
+            # Include model_type in display name
+            display_name = f"({model_type}) {model}{status}"
+            model_choices.append((display_name, model, is_imported))
+
+        # Show interactive selection menu
+        selected = select_models(model_choices)
+        print("\nImporting models...\n")
+        for display_name, model_name, is_imported in selected:
+            if is_imported:
+                # Remove model if it was already imported
+                del existing_models[model_name]
+                models_file.write_text(json.dumps(existing_models, indent=2))
+                click.echo(f"Removed {model_name}")
+            else:
+                # Import new model
+                existing_models[model_name] = {"aliases": []}
+                models_file.write_text(json.dumps(existing_models, indent=2))
+                click.echo(f"Imported {model_name}")
 
 
 @llm.hookimpl
@@ -188,3 +269,59 @@ class MlxModel(llm.Model):
             "peak_memory": chunk.peak_memory,
             "finish_reason": chunk.finish_reason,
         }
+
+
+def select_models(model_choices):
+    selected = [False] * len(model_choices)
+    idx = 0
+    window_size = os.get_terminal_size().lines - 5
+
+    while True:
+        print("\033[H\033[J", end="")
+        print(
+            "❯ llm mlx import-models\nAvailable models (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C to quit):"
+        )
+
+        window_start = max(
+            0, min(idx - window_size + 3, len(model_choices) - window_size)
+        )
+        window_end = min(window_start + window_size, len(model_choices))
+
+        for i in range(window_start, window_end):
+            display_name, _, _ = model_choices[i]
+            print(
+                f"{'>' if i == idx else ' '} {'◉' if selected[i] else '○'} {display_name}"
+            )
+
+        key = get_key()
+        if key == "\x1b[A":  # Up arrow
+            idx = max(0, idx - 1)
+        elif key == "\x1b[B":  # Down arrow
+            idx = min(len(model_choices) - 1, idx + 1)
+        elif key == " ":
+            selected[idx] = not selected[idx]
+        elif key == "\r":  # Enter key
+            break
+        elif key == "\x03":  # Ctrl+C
+            print("\nImport is cancelled. Do nothing.")
+            sys.exit(0)
+
+    return [
+        choice for choice, is_selected in zip(model_choices, selected) if is_selected
+    ]
+
+
+def get_key():
+    """Get a single keypress from the user."""
+    import tty, termios
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            ch += sys.stdin.read(2)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch
