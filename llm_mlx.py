@@ -146,7 +146,6 @@ def register_commands(cli):
                 click.echo(f"Imported {model_name}")
 
 
-
 @llm.hookimpl
 def register_models(register):
     for model_path, config in json.loads(_ensure_models_file().read_text()).items():
@@ -276,28 +275,41 @@ def select_models(model_choices):
     selected = [False] * len(model_choices)
     idx = 0
     window_size = os.get_terminal_size().lines - 5
-    
+
     while True:
         print("\033[H\033[J", end="")
-        print("❯ llm mlx import-models\nAvailable models (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C to quit):")
-        
-        window_start = max(0, min(idx - window_size + 3, len(model_choices) - window_size))
+        print(
+            "❯ llm mlx import-models\nAvailable models (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C to quit):"
+        )
+
+        window_start = max(
+            0, min(idx - window_size + 3, len(model_choices) - window_size)
+        )
         window_end = min(window_start + window_size, len(model_choices))
 
         for i in range(window_start, window_end):
             display_name, _, _ = model_choices[i]
-            print(f"{'>' if i == idx else ' '} {'◉' if selected[i] else '○'} {display_name}")
+            print(
+                f"{'>' if i == idx else ' '} {'◉' if selected[i] else '○'} {display_name}"
+            )
 
-        match get_key():
-            case "\x1b[A": idx = max(0, idx - 1)  # Up
-            case "\x1b[B": idx = min(len(model_choices) - 1, idx + 1)  # Down
-            case " ": selected[idx] = not selected[idx]  # Space
-            case "\r": break  # Enter
-            case "\x03": 
-                print("\nImport is cancelled. Do nothing.")
-                sys.exit(0)
+        key = get_key()
+        if key == "\x1b[A":  # Up arrow
+            idx = max(0, idx - 1)
+        elif key == "\x1b[B":  # Down arrow
+            idx = min(len(model_choices) - 1, idx + 1)
+        elif key == " ":
+            selected[idx] = not selected[idx]
+        elif key == "\r":  # Enter key
+            break
+        elif key == "\x03":  # Ctrl+C
+            print("\nImport is cancelled. Do nothing.")
+            sys.exit(0)
 
-    return [choice for choice, is_selected in zip(model_choices, selected) if is_selected]
+    return [
+        choice for choice, is_selected in zip(model_choices, selected) if is_selected
+    ]
+
 
 def get_key():
     """Get a single keypress from the user."""
