@@ -39,6 +39,7 @@ The [mlx-community](https://huggingface.co/mlx-community) organization is a usef
 
 The following models all work well with this plugin:
 
+- `mlx-community/gemma-3-27b-it-qat-4bit` - [16GB](https://huggingface.co/mlx-community/gemma-3-27b-it-qat-4bit)
 - `mlx-community/Qwen2.5-0.5B-Instruct-4bit` - [278MB](https://huggingface.co/mlx-community/Qwen2.5-0.5B-Instruct-4bit)
 - `mlx-community/Mistral-7B-Instruct-v0.3-4bit` - [4.08GB](https://huggingface.co/mlx-community/Mistral-7B-Instruct-v0.3-4bit)
 -  `mlx-community/Mistral-Small-24B-Instruct-2501-4bit` — [13.26 GB](https://huggingface.co/mlx-community/Mistral-Small-24B-Instruct-2501-4bit)
