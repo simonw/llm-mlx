@@ -10,7 +10,7 @@ classifiers = [
 ]
 requires-python = ">=3.9"
 dependencies = [
-    "llm",
+    "llm>=0.24",
     "mlx-lm"
 ]
 
