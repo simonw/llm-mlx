@@ -63,29 +63,32 @@ For example:
 llm -m mlx-community/Llama-3.2-3B-Instruct-4bit 'Joke about pelicans' -o max_tokens 60 -o temperature 1.0
 ```
 
-## Importing existing models
+## Managing existing models from your Hugging Face cache
 
 If you have used MLX models in the past you may already have some installed in your `~/.cache/huggingface/hub` directory.
 
-The `llm mlx import-models` command can detect these and provide you with the option to add them to the list of models registered with LLM.
+The `llm mlx manage-models` command can detect these and provide you with the option to add them to the list of models registered with LLM.
 
 ```bash
-llm mlx import-models
+llm mlx manage-models
 ```
 This will open an interface like this one:
 ```
-Available models (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C to quit):
-> ○ (llama) mlx-community/DeepSeek-R1-Distill-Llama-8B (already imported)
-  ○ (llama) mlx-community/Llama-3.2-3B-Instruct-4bit (already imported)
-  ○ (llama) mlx-community/Llama-3.3-70B-Instruct-4bit
-  ○ (mistral) mlx-community/Mistral-7B-Instruct-v0.3-4bit (already imported)
-  ○ (mistral) mlx-community/Mistral-Small-24B-Instruct-2501-4bit
+Available model files (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C to quit):
+  ○ Unregister mlx-community/gemma-3-27b-it-qat-4bit (gemma3)
+  ○ Register mlx-community/DeepSeek-R1-Distill-Llama-8B (llama)
+> ○ Register mlx-community/Llama-3.2-3B-Instruct-4bit (llama)
+  ○ Unregister mlx-community/SmolLM-135M-Instruct-4bit (llama)
+  ○ Register mlx-community/nanoLLaVA-1.5-8bit (llava-qwen2)
+  ○ Register mlx-community/Mistral-Small-3.1-Text-24B-Instruct-2503-8bit (mistral)
+  ○ Unregister mlx-community/OLMo-2-0325-32B-Instruct-4bit (olmo2)
+  ○ Unregister mlx-community/OpenELM-270M-Instruct (openelm)
+  ○ Unregister mlx-community/DeepCoder-14B-Preview-4bit (qwen2)
+  ○ Unregister mlx-community/Qwen2.5-0.5B-Instruct-4bit (qwen2)
 ```
-Navigate <up> and <down>, hit `<space>` to select models to import and then hit `<enter>` to confirm.
+Navigate <up> and <down>, hit `<space>` to select actions you want to take and then hit `<enter>` to confirm. You can use this interface to both register new models and unregister existing models.
 
-### Removing imported models
-
-If an already imported model is selected, it will be removed from the list of models registered with llm-mlx.
+This tool only changes the list of available models recorded in your `~/Library/Application Support/io.datasette.llm/llm-mlx.json` file. It does not delete any model files from your Hugging Face cache.
 
 ## Using models from Python
 

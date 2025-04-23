@@ -65,8 +65,8 @@ def register_commands(cli):
         click.echo(json.dumps(models, indent=2))
 
     @mlx.command()
-    def import_models():
-        "Import existing MLX models from the Hugging Face cache"
+    def manage_models():
+        "Register MLX models from the Hugging Face cache on disk"
         cache_dir = Path(
             os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
         )
@@ -118,29 +118,29 @@ def register_commands(cli):
         models_file = _ensure_models_file()
         existing_models = json.loads(models_file.read_text())
 
-        # Create list of models with their current import status
+        # Create list of models with their current registration status
         model_choices = []
         for model_type, model in sorted(found_models):
-            is_imported = model in existing_models
-            status = " (already imported)" if is_imported else ""
+            is_registered = model in existing_models
+            action = "Unregister" if is_registered else "Register"
             # Include model_type in display name
-            display_name = f"({model_type}) {model}{status}"
-            model_choices.append((display_name, model, is_imported))
+            display_name = f"{action} {model} ({model_type})"
+            model_choices.append((display_name, model, is_registered))
 
         # Show interactive selection menu
         selected = select_models(model_choices)
-        print("\nImporting models...\n")
-        for display_name, model_name, is_imported in selected:
-            if is_imported:
-                # Remove model if it was already imported
+        print("\nUpdating {}".format(models_file))
+        for display_name, model_name, is_registered in selected:
+            if is_registered:
+                # Unregister model
                 del existing_models[model_name]
                 models_file.write_text(json.dumps(existing_models, indent=2))
-                click.echo(f"Removed {model_name}")
+                click.echo(f"  Unregistered {model_name}")
             else:
-                # Import new model
+                # Register new model
                 existing_models[model_name] = {"aliases": []}
                 models_file.write_text(json.dumps(existing_models, indent=2))
-                click.echo(f"Imported {model_name}")
+                click.echo(f"  Registered {model_name}")
 
 
 @llm.hookimpl
@@ -282,7 +282,7 @@ def select_models(model_choices):
     while True:
         print("\033[H\033[J", end="")
         print(
-            "❯ llm mlx import-models\nAvailable models (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C to quit):"
+            "❯ llm mlx manage-models\nAvailable model files (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C to quit):"
         )
 
         window_start = max(
@@ -306,7 +306,7 @@ def select_models(model_choices):
         elif key == "\r":  # Enter key
             break
         elif key == "\x03":  # Ctrl+C
-            print("\nImport is cancelled. Do nothing.")
+            print("\nNo changes made.")
             sys.exit(0)
 
     return [
