@@ -1,6 +1,6 @@
 [project]
 name = "llm-mlx"
-version = "0.3"
+version = "0.3.1"
 description = "Support for MLX models in LLM"
 readme = "README.md"
 authors = [{name = "Simon Willison"}]
