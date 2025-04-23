@@ -83,6 +83,10 @@ Available models (↑/↓ to navigate, SPACE to select, ENTER to confirm, Ctrl+C
 ```
 Navigate <up> and <down>, hit `<space>` to select models to import and then hit `<enter>` to confirm.
 
+### Removing imported models
+
+If an already imported model is selected, it will be removed from the list of models registered with llm-mlx.
+
 ## Using models from Python
 
 If you have registered models with the `llm download-model` command you can use in Python like this:
