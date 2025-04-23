@@ -1,11 +1,8 @@
 import click
 import json
 import llm
-import mlx.core as mx
-from mlx_lm import load, stream_generate
-from mlx_lm.sample_utils import make_sampler
 from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
-from pydantic import Field, field_validator
+from pydantic import Field
 from typing import Optional
 import os
 from pathlib import Path  # local import to avoid adding to global namespace
@@ -200,11 +197,17 @@ class MlxModel(llm.Model):
         self._tokenizer = None
 
     def _load(self):
+        from mlx_lm import load
+
         if self._model is None:
             self._model, self._tokenizer = load(self.model_path)
         return self._model, self._tokenizer
 
     def execute(self, prompt, stream, response, conversation):
+        import mlx.core as mx
+        from mlx_lm import stream_generate
+        from mlx_lm.sample_utils import make_sampler
+
         model, tokenizer = self._load()
 
         messages = []
