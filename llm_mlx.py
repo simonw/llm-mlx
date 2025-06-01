@@ -1,24 +1,24 @@
 import click
 import json
 import llm
+import re
 from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
 from pydantic import Field
 from typing import Optional
 import os
-from pathlib import Path  # local import to avoid adding to global namespace
+from pathlib import Path
 import sys
 
 disable_progress_bars()
 
 # These defaults copied from llama.cpp
-# https://github.com/ggml-org/llama.cpp/blob/68ff663a04ed92044a9937bcae353e9d9733f9cd/examples/main/README.md#generation-flags
 DEFAULT_TEMPERATURE = 0.8
 DEFAULT_TOP_P = 0.9
 DEFAULT_MIN_P = 0.1
-
 DEFAULT_MIN_TOKENS_TO_KEEP = 1
 DEFAULT_MAX_TOKENS = 1024
 
+DEBUG = False
 
 def _ensure_models_file():
     filepath = llm.user_dir() / "llm-mlx.json"
@@ -152,6 +152,7 @@ def register_models(register):
 
 class MlxModel(llm.Model):
     can_stream = True
+    supports_tools = True
 
     class Options(llm.Options):
         max_tokens: Optional[int] = Field(
@@ -195,23 +196,27 @@ class MlxModel(llm.Model):
         self.model_path = model_path
         self._model = None
         self._tokenizer = None
+        self._tool_format = None
 
     def _load(self):
         from mlx_lm import load
 
         if self._model is None:
             self._model, self._tokenizer = load(self.model_path)
+        if self._tool_format is None:
+            # Detect tool call format from tokenizer's chat template
+            self._tool_format = self._detect_tool_format(self._tokenizer)
+
+        if DEBUG:
+            print("Template is", self._tokenizer.chat_template)
         return self._model, self._tokenizer
 
-    def execute(self, prompt, stream, response, conversation):
-        import mlx.core as mx
-        from mlx_lm import stream_generate
-        from mlx_lm.sample_utils import make_sampler
-
-        model, tokenizer = self._load()
-
+    def build_messages(self, prompt, conversation):
+        """Build messages for the chat template with tool support"""
         messages = []
         current_system = None
+        
+        # Add conversation history
         if conversation is not None:
             for prev_response in conversation.responses:
                 if (
@@ -226,12 +231,205 @@ class MlxModel(llm.Model):
                     {"role": "user", "content": prev_response.prompt.prompt}
                 )
                 messages.append({"role": "assistant", "content": prev_response.text()})
+        # Add current system message if needed
         if prompt.system and prompt.system != current_system:
             messages.append({"role": "system", "content": prompt.system})
-        messages.append({"role": "user", "content": prompt.prompt})
-        chat_prompt = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True
-        )
+        
+        # Add tool results from current prompt if any
+        if prompt.tool_results:
+            for tool_result in prompt.tool_results:
+                messages.append({
+                    "role": "tool",  # Template should convert to ipython for llama3.x
+                    "name": tool_result.name,
+                    "tool_call_id": tool_result.tool_call_id,
+                    "content": json.loads(tool_result.output),
+                })
+        
+        # Add current user message (unless we're just adding tool results)
+        if not prompt.tool_results:
+            messages.append({"role": "user", "content": prompt.prompt})
+        
+        if DEBUG:
+            print(messages)  # Debug output
+        return messages
+
+    def _detect_tool_format(self, tokenizer):
+        """Analyze the model's chat template to predict tool call format"""
+        try:
+            template_str = str(tokenizer.chat_template)
+            if not template_str:
+                return "generic"
+            
+            # Analyze template content for format markers (like llama.cpp does)
+            if "<｜tool▁calls▁begin｜>" in template_str:
+                return "deepseek_r1"
+            elif "<tool_call>" in template_str:
+                return "hermes"
+            elif "<|start_header_id|>ipython<|end_header_id|>" in template_str:
+                return "llama3x"
+            elif "[TOOL_CALLS]" in template_str:
+                return "mistral_nemo"
+            elif "<function=" in template_str:
+                return "functionary"
+            elif "functools[" in template_str:
+                return "firefunction"
+            # Additional patterns for better detection
+            elif "llama" in self.model_path.lower() and ("3.2" in self.model_path or "3.1" in self.model_path):
+                return "llama3x"
+            elif "qwen" in self.model_path.lower():
+                return "hermes"  # Qwen often uses <tool_call> format
+            elif "mistral" in self.model_path.lower() and "nemo" in self.model_path.lower():
+                return "mistral_nemo"
+            else:
+                return "generic"
+        except Exception as e:
+            print(f"Warning: Could not analyze template: {e}")
+            return "generic"
+    
+    def _get_format_patterns(self, format_type):
+        """Get regex patterns based on detected format"""
+        patterns = {
+            "llama3x": [
+                # Llama 3.x simple format: {"name": "func", "parameters": {...}}
+                (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"parameters"\s*:\s*(\{[^}]*\})\s*\}', 'llama3x'),
+                # # Also handle "arguments" variant
+                # (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}', 'llama3x_args'),
+            ],
+            "hermes": [
+                # Hermes XML format: <tool_call>{"name": "func", "arguments": {...}}</tool_call>
+                (r'<tool_call>\s*\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}\s*</tool_call>', 'hermes'),
+                # Also support bare JSON in case template doesn't wrap it
+                (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}', 'hermes_bare'),
+                # Handle parameters variant for Qwen models
+                (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"parameters"\s*:\s*(\{[^}]*\})\s*\}', 'hermes_params'),
+            ],
+            "deepseek_r1": [
+                # DeepSeek R1 format: function<｜tool▁sep｜>name\n```json\n{...}```
+                (r'function<｜tool▁sep｜>([^\n]+)\n```json\n(\{[^}]*\})```', 'deepseek_r1'),
+            ],
+            "mistral_nemo": [
+                # Mistral Nemo format: [TOOL_CALLS] [{"name": "func", "arguments": {...}}]
+                (r'\[TOOL_CALLS\]\s*\[\s*\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}\s*\]', 'mistral_nemo'),
+            ],
+            "functionary": [
+                # Functionary format: <function=name>{...}</function>
+                (r'<function=([^>]+)>(\{[^}]*\})</function>', 'functionary'),
+            ],
+            "firefunction": [
+                # FireFunction format:  functools[{"name": "func", "arguments": {...}}]
+                (r'functools\[\s*\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}\s*\]', 'firefunction'),
+            ],
+            "generic": [
+                # OpenAI format: {"tool_calls": [{"type": "function", "function": {"name": "func", "arguments": {...}}}]}
+                (r'\{\s*"tool_calls"\s*:\s*\[\s*\{\s*"type"\s*:\s*"function"\s*,\s*"function"\s*:\s*\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}\s*\}\s*\]\s*\}', 'openai'),
+                # Simple format fallback: {"name": "func", "parameters": {...}}
+                (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"parameters"\s*:\s*(\{[^}]*\})\s*\}', 'simple'),
+                # # Simple format with arguments: {"name": "func", "arguments": {...}}
+                (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}', 'simple_args'),
+                # Function call format: function_name({...})
+                (r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*(\{[^}]*\})\s*\)', 'func_call'),
+            ]
+        }
+        return patterns.get(format_type, patterns["generic"])
+    
+    def _parse_tool_calls(self, text, available_tools, format_type="generic"):
+        """Parse tool calls using format-aware patterns"""
+        tool_calls = []
+        tool_names = [tool.name for tool in available_tools]
+        seen_calls = set()  # Track duplicates
+        
+        # Get patterns for the detected format
+        patterns = self._get_format_patterns(format_type)
+        
+        for pattern, fmt in patterns:
+            matches = re.findall(pattern, text, re.DOTALL | re.MULTILINE)
+            
+            for match in matches:
+                if len(match) >= 2:
+                    func_name, args_str = match[0], match[1]
+                    
+                    # Create a signature to avoid duplicates
+                    call_signature = f"{func_name}:{args_str.strip()}"
+                    if call_signature in seen_calls:
+                        continue
+                    
+                    if func_name in tool_names:
+                        try:
+                            # Parse arguments with better error handling
+                            if args_str.strip() in ['{}', '']:
+                                arguments = {}
+                            else:
+                                # Handle common JSON parsing issues
+                                args_str = args_str.strip()
+                                if not args_str.startswith('{'):
+                                    args_str = '{' + args_str
+                                if not args_str.endswith('}'):
+                                    args_str = args_str + '}'
+                                arguments = json.loads(args_str)
+                            
+                            tool_call = llm.ToolCall(
+                                name=func_name,
+                                arguments=arguments,
+                                tool_call_id=f"call_{len(tool_calls)}_{fmt}"
+                            )
+                            tool_calls.append(tool_call)
+                            seen_calls.add(call_signature)
+                            
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+        
+        return tool_calls
+
+    def execute(self, prompt, stream, response, conversation):
+        import mlx.core as mx
+        from mlx_lm import stream_generate
+        from mlx_lm.sample_utils import make_sampler
+
+        model, tokenizer = self._load()
+        messages = self.build_messages(prompt, conversation)
+        
+        # Convert tools to the format expected by apply_chat_template
+        tools = None
+        if prompt.tools:
+            tools = []
+            for tool in prompt.tools:
+                tool_def = {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description or "",
+                        "parameters": tool.input_schema or {"type": "object", "properties": {}}
+                    }
+                }
+                tools.append(tool_def)
+        
+        # Use the tokenizer's built-in chat template with tool support
+        try:
+            template_args = dict(
+                conversation=messages,
+                tools=tools,
+                add_generation_prompt=True,
+                tools_in_user_message=False,  # Required for llama3x
+                tokenize=False,  # Let it tokenize directly
+            )
+            if DEBUG:
+                # Print formatted messages for debugging before tokenization
+                print("Messages before tokenization:")
+                print(tokenizer.apply_chat_template(
+                    **template_args
+                ))
+
+            chat_prompt = tokenizer.apply_chat_template(
+                **template_args,
+            )
+        except Exception as e:
+            # Fallback to basic template without tools if template doesn't support them
+            print(f"Warning: Template doesn't support tools, falling back: {e}")
+            chat_prompt = tokenizer.apply_chat_template(
+                messages, 
+                add_generation_prompt=True,
+                tokenize=True
+            )
 
         sampler = make_sampler(
             (
@@ -256,7 +454,9 @@ class MlxModel(llm.Model):
         if prompt.options.unlimited:
             max_tokens = -1
 
-        # Always use stream_generate() because generate() in mlx_lm calls it under the hood
+        # Generate text and collect for tool call parsing
+        generated_text = ""
+        
         for chunk in stream_generate(
             model,
             tokenizer,
@@ -264,7 +464,11 @@ class MlxModel(llm.Model):
             sampler=sampler,
             max_tokens=max_tokens,
         ):
-            yield chunk.text
+            generated_text += chunk.text
+            if not prompt.tools:
+                yield chunk.text
+        
+        # Set usage info
         response.set_usage(input=chunk.prompt_tokens, output=chunk.generation_tokens)
         response.response_json = {
             "prompt_tps": chunk.prompt_tps,
@@ -272,6 +476,20 @@ class MlxModel(llm.Model):
             "peak_memory": chunk.peak_memory,
             "finish_reason": chunk.finish_reason,
         }
+        
+        # Parse tool calls if tools are available and we don't have results yet
+        if prompt.tools and not prompt.tool_results:
+            tool_calls = self._parse_tool_calls(generated_text, prompt.tools, self._tool_format)
+            if tool_calls:
+                for tool_call in tool_calls:
+                    if DEBUG:
+                        print(f"Found tool call: {tool_call.name} with args {tool_call.arguments}")  # Debug output
+                    response.add_tool_call(tool_call)
+                # Add some new lines to separate tool calls from the main text
+                generated_text += "\n\n"
+        
+        if prompt.tools:
+            yield generated_text
 
 
 def select_models(model_choices):
