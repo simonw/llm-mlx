@@ -206,6 +206,8 @@ class MlxModel(llm.Model):
         if self._tool_format is None:
             # Detect tool call format from tokenizer's chat template
             self._tool_format = self._detect_tool_format(self._tokenizer)
+            if DEBUG:
+                print(f"Detected tool format: {self._tool_format}")
 
         if DEBUG:
             print("Template is", self._tokenizer.chat_template)
@@ -477,8 +479,8 @@ class MlxModel(llm.Model):
             "finish_reason": chunk.finish_reason,
         }
         
-        # Parse tool calls if tools are available and we don't have results yet
-        if prompt.tools and not prompt.tool_results:
+        # Parse tool calls if tools are available
+        if prompt.tools:
             tool_calls = self._parse_tool_calls(generated_text, prompt.tools, self._tool_format)
             if tool_calls:
                 for tool_call in tool_calls:
