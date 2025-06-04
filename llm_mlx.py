@@ -294,8 +294,8 @@ class MlxModel(llm.Model):
             "llama3x": [
                 # Llama 3.x simple format: {"name": "func", "parameters": {...}}
                 (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"parameters"\s*:\s*(\{[^}]*\})\s*\}', 'llama3x'),
-                # # Also handle "arguments" variant
-                # (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}', 'llama3x_args'),
+                # Also handle "arguments" variant
+                (r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}', 'llama3x_args'),
             ],
             "hermes": [
                 # Hermes XML format: <tool_call>{"name": "func", "arguments": {...}}</tool_call>
