@@ -150,6 +150,66 @@ def register_models(register):
         register(MlxModel(model_path), aliases=aliases)
 
 
+def _tokenizer_uses_harmony(tokenizer):
+    """
+    Detect if this tokenizer uses a GPT-OSS Harmony-style chat template.
+
+    Harmony templates use <|channel|> tags and expect 'thinking' fields
+    for analysis content.
+    """
+    try:
+        template = tokenizer.chat_template
+        if template and isinstance(template, str):
+            has_channel = "<|channel|>" in template
+            has_thinking = "thinking" in template
+            # Check for Harmony-specific markers
+            return has_channel and has_thinking
+        return False
+    except (AttributeError, TypeError) as e:
+        return False
+
+
+def _split_harmony_message(text):
+    """
+    Parse a Harmony-formatted response into analysis and final sections.
+
+    Expected format:
+        <|channel|>analysis<|message|>
+        ... thinking content ...
+        <|end|>
+        <|channel|>final<|message|>
+        ... final answer ...
+        <|end|>
+
+    Returns a tuple of (analysis_text, final_text).
+    The channel tags are stripped - only the content between <|message|> and <|end|> is kept.
+    Handles incomplete responses where the final <|end|> tag might be missing.
+    """
+    import re
+
+    analysis_text = ""
+    final_text = ""
+
+    # Pattern to match analysis section (content between <|message|> and <|end|>)
+    analysis_pattern = r'<\|channel\|>analysis\s*<\|message\|>(.*?)<\|end\|>'
+    analysis_match = re.search(analysis_pattern, text, re.DOTALL)
+    if analysis_match:
+        analysis_text = analysis_match.group(1).strip()
+
+    # Pattern to match final section (content between <|message|> and optional <|end|>)
+    # Handle both complete responses (with <|end|>) and incomplete ones (without)
+    final_pattern = r'<\|channel\|>final\s*<\|message\|>(.*?)(?:<\|end\|>|$)'
+    final_match = re.search(final_pattern, text, re.DOTALL)
+    if final_match:
+        final_text = final_match.group(1).strip()
+
+    # If no sections found, assume the entire text is the final answer
+    if not analysis_text and not final_text:
+        final_text = text
+
+    return analysis_text, final_text
+
+
 class MlxModel(llm.Model):
     can_stream = True
 
@@ -210,6 +270,9 @@ class MlxModel(llm.Model):
 
         model, tokenizer = self._load()
 
+        # Check if this model uses Harmony template
+        is_harmony = _tokenizer_uses_harmony(tokenizer)
+
         messages = []
         current_system = None
         if conversation is not None:
@@ -225,10 +288,27 @@ class MlxModel(llm.Model):
                 messages.append(
                     {"role": "user", "content": prev_response.prompt.prompt}
                 )
-                messages.append({"role": "assistant", "content": prev_response.text()})
+
+                # Get the full assistant response text
+                assistant_text = prev_response.text()
+
+                if is_harmony:
+                    # Parse the Harmony response to extract analysis and final sections
+                    analysis, final = _split_harmony_message(assistant_text)
+
+                    # Build message with thinking field for analysis
+                    assistant_msg = {"role": "assistant", "content": final}
+                    if analysis:
+                        assistant_msg["thinking"] = analysis
+                    messages.append(assistant_msg)
+                else:
+                    # Non-Harmony models: use the text as-is
+                    messages.append({"role": "assistant", "content": assistant_text})
+
         if prompt.system and prompt.system != current_system:
             messages.append({"role": "system", "content": prompt.system})
         messages.append({"role": "user", "content": prompt.prompt})
+
         chat_prompt = tokenizer.apply_chat_template(
             messages, add_generation_prompt=True
         )
