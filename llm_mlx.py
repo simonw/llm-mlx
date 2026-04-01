@@ -7,6 +7,7 @@ from typing import Optional
 import os
 from pathlib import Path  # local import to avoid adding to global namespace
 import sys
+import shutil
 
 disable_progress_bars()
 
@@ -63,6 +64,62 @@ def register_commands(cli):
         models_file = _ensure_models_file()
         models = json.loads(models_file.read_text())
         click.echo(json.dumps(models, indent=2))
+
+    @mlx.command()
+    @click.argument("model_id")
+    def remove_model(model_id):
+        """
+        Removes a downloaded model and its files.
+
+        This command will delete the model's files from the Hugging Face
+        cache and unregister it from LLM.
+
+        Example:
+        
+            llm mlx remove-model mlx-community/Llama-3.2-3B-Instruct-4bit
+        """
+        # Define the cache directory for Hugging Face models
+        # We use pathlib for robust path manipulation.
+        cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+        
+        # Hugging Face cache directories replace '/' with '--' in the model ID
+        model_dir_name = f"models--{model_id.replace('/', '--')}"
+        model_path = cache_dir / model_dir_name
+
+        if not model_path.exists():
+            click.echo(f"Error: Model directory not found at {model_path}", err=True)
+            return
+
+        # --- Safety Check ---
+        click.confirm(
+            f"This will permanently delete the directory {model_path} and all its contents. Are you sure?",
+            abort=True,
+        )
+
+        # --- File Deletion ---
+        try:
+            shutil.rmtree(model_path)
+            click.echo(f"Successfully deleted model files from {model_path}")
+        except OSError as e:
+            click.echo(f"Error deleting files: {e}", err=True)
+            return
+
+        # --- Unregister the Model ---
+        models_file = _ensure_models_file()
+        if models_file.exists():
+            with models_file.open("r") as f:
+                models = json.load(f)
+            
+            # The models are stored as keys in the top-level object
+            if model_id in models:
+                del models[model_id]
+                with models_file.open("w") as f:
+                    json.dump(models, f, indent=2)
+                click.echo(f"Successfully unregistered model '{model_id}'")
+            else:
+                click.echo(f"Model '{model_id}' was not registered in {models_file}, but files were deleted.")
+        else:
+            click.echo("No models JSON file found to unregister from.")
 
     @mlx.command()
     def manage_models():
