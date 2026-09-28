@@ -1,6 +1,7 @@
 import click
 import json
 import llm
+from huggingface_hub.constants import HF_HUB_CACHE
 from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
 from pydantic import Field
 from typing import Optional
@@ -67,9 +68,7 @@ def register_commands(cli):
     @mlx.command()
     def manage_models():
         "Register MLX models from the Hugging Face cache on disk"
-        cache_dir = Path(
-            os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
-        )
+        cache_dir = Path(HF_HUB_CACHE)
         found_models = set()
         for root, dirs, _ in os.walk(cache_dir):
             for d in dirs:
